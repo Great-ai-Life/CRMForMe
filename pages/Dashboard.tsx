@@ -100,23 +100,54 @@ const Dashboard: React.FC = () => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    setImportStatus(null);
+    setImportStatus({ type: 'success', message: 'Reading file...' });
 
     Papa.parse(file, {
       header: true,
       skipEmptyLines: true,
       complete: (results) => {
         try {
+          const currentLeads = getLeads(); // Fetch latest leads from storage to check duplicates
           let importedCount = 0;
-          const rows = [...results.data].reverse();
+          let skippedCount = 0;
+          
+          // We assume the sheet grows downwards. We process normally.
+          const rows = [...results.data];
 
           rows.forEach((row: any) => {
             const fullName = row['full_name'] || row['Full Name'] || 'Unknown Candidate';
             if (!fullName || fullName === 'Unknown Candidate') return;
 
+            // Extract identifiers for duplicate check
+            const rowPhone = (row['phone_number'] || row['Phone Number'] || '').toString().trim().replace(/\D/g, ''); // strip non-digits
+            const rowEmail = (row['email'] || row['Email'] || '').toString().trim().toLowerCase();
+            const rowNameClean = fullName.trim().toLowerCase();
+
+            // Duplicate Check Logic
+            const isDuplicate = currentLeads.some(existing => {
+              // 1. Check Name Match
+              const existingName = existing.name.trim().toLowerCase();
+              if (existingName === rowNameClean) return true;
+
+              // 2. Check Phone Match (if present in CSV)
+              const existingPhone = (existing.answers['q_contact']?.importedAnswer || existing.answers['q_contact']?.answer || '').toString().replace(/\D/g, '');
+              if (rowPhone.length > 5 && existingPhone.length > 5 && rowPhone === existingPhone) return true;
+
+              // 3. Check Email Match (if present in CSV)
+              const existingEmail = (existing.answers['q_email']?.importedAnswer || existing.answers['q_email']?.answer || '').toString().trim().toLowerCase();
+              if (rowEmail.length > 5 && existingEmail.length > 5 && rowEmail === existingEmail) return true;
+
+              return false;
+            });
+
+            if (isDuplicate) {
+              skippedCount++;
+              return;
+            }
+
+            // Create new lead if no duplicate found
             const newLead = createLead(fullName);
             
-            // Updated mapping to new Strategic IDs where relevant
             const answersToMap: Record<string, string> = {
               'q_city': row['city'] || row['City'],
               'q_contact': row['phone_number'] || row['Phone Number'],
@@ -158,11 +189,11 @@ const Dashboard: React.FC = () => {
           setLeads(getLeads());
           setImportStatus({ 
             type: 'success', 
-            message: `Successfully imported ${importedCount} leads into Queue.` 
+            message: `Imported ${importedCount} new leads (${skippedCount} duplicates skipped).` 
           });
           
           if (fileInputRef.current) fileInputRef.current.value = '';
-          setTimeout(() => setImportStatus(null), 4000);
+          setTimeout(() => setImportStatus(null), 5000);
 
         } catch (error) {
           console.error("Import error", error);
