@@ -39,6 +39,7 @@ export interface NextStep {
 export interface Lead {
   id: string;
   name: string;
+  interviewer?: string; // The person conducting the screening
   createdAt: number;
   updatedAt: number;
   status: 'New' | 'In Progress' | 'Review' | 'Qualified' | 'Disqualified';

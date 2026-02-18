@@ -8,6 +8,7 @@ import Papa from 'papaparse';
 const Dashboard: React.FC = () => {
   const [leads, setLeads] = useState<Lead[]>([]);
   const [newLeadName, setNewLeadName] = useState('');
+  const [interviewerName, setInterviewerName] = useState('');
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'queue' | 'history'>('queue');
   const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
@@ -28,10 +29,11 @@ const Dashboard: React.FC = () => {
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
     if (!newLeadName.trim()) return;
-    const lead = createLead(newLeadName);
+    const lead = createLead(newLeadName, interviewerName);
     setLeads(getLeads());
     setIsModalOpen(false);
     setNewLeadName('');
+    setInterviewerName('');
     navigate(`/screen/${lead.id}`);
   };
 
@@ -110,12 +112,13 @@ const Dashboard: React.FC = () => {
     }
 
     const headers = [
-      'Lead Name', 'Status', 'Date', 'Grade', 'Next Step', 'Next Step Date', 'Session Notes',
+      'Lead Name', 'Interviewer', 'Status', 'Date', 'Grade', 'Next Step', 'Next Step Date', 'Session Notes',
       'Investment Budget', '10 Vehicle Commit', 'Timeline', 'Experience', 'Biz Model Awareness'
     ];
 
     const rows = leadsToExport.map(lead => [
       lead.name,
+      lead.interviewer || '',
       lead.status,
       new Date(lead.createdAt).toLocaleDateString(),
       lead.internalScore.overallRating || 'N/A',
@@ -390,6 +393,13 @@ const Dashboard: React.FC = () => {
                                     <Clock className="w-3.5 h-3.5" />
                                     {new Date(lead.createdAt).toLocaleDateString()}
                                 </span>
+
+                                {lead.interviewer && (
+                                  <span className="flex items-center gap-1 shrink-0 text-neutral-400 dark:text-neutral-500">
+                                    <User className="w-3.5 h-3.5" />
+                                    By: {lead.interviewer}
+                                  </span>
+                                )}
                                 
                                 <span className={`px-2 py-0.5 rounded-full text-[10px] md:text-xs font-medium border shrink-0 ${getStatusColor(lead.status)}`}>
                                     {lead.status}
@@ -456,16 +466,28 @@ const Dashboard: React.FC = () => {
           <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-2xl max-w-md w-full p-6 animate-in fade-in zoom-in duration-200 border border-neutral-200 dark:border-neutral-800">
             <h2 className="text-xl font-bold mb-4 text-neutral-900 dark:text-white">Start New Screening</h2>
             <form onSubmit={handleCreate}>
-              <div className="mb-6">
-                <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Candidate Name</label>
-                <input 
-                  autoFocus
-                  type="text" 
-                  value={newLeadName}
-                  onChange={(e) => setNewLeadName(e.target.value)}
-                  className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-indigo-600 dark:focus:ring-indigo-500 focus:border-indigo-600 dark:focus:border-indigo-500 outline-none transition-all dark:text-white"
-                  placeholder="e.g. John Doe"
-                />
+              <div className="space-y-4 mb-6">
+                <div>
+                  <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Candidate Name</label>
+                  <input 
+                    autoFocus
+                    type="text" 
+                    value={newLeadName}
+                    onChange={(e) => setNewLeadName(e.target.value)}
+                    className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-indigo-600 dark:focus:ring-indigo-500 focus:border-indigo-600 dark:focus:border-indigo-500 outline-none transition-all dark:text-white"
+                    placeholder="e.g. John Doe"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-semibold text-neutral-700 dark:text-neutral-300 mb-2">Interviewer Name (Optional)</label>
+                  <input 
+                    type="text" 
+                    value={interviewerName}
+                    onChange={(e) => setInterviewerName(e.target.value)}
+                    className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-indigo-600 dark:focus:ring-indigo-500 focus:border-indigo-600 dark:focus:border-indigo-500 outline-none transition-all dark:text-white"
+                    placeholder="e.g. Alex Smith"
+                  />
+                </div>
               </div>
               <div className="flex justify-end gap-3">
                 <button 

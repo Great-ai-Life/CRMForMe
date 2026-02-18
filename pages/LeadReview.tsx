@@ -5,7 +5,7 @@ import { analyzeLead } from '../services/geminiService';
 import { fetchCityInsights } from '../services/groqService';
 import { Lead, InternalScore, Grade, NextStep } from '../types';
 import { SECTIONS } from '../constants';
-import { Save, ArrowLeft, Bot, Sparkles, Loader2, Download, Filter, CheckCircle2, FileText, Calendar, Phone, MapPin, Briefcase, AlertCircle, Clock, Map, Globe } from 'lucide-react';
+import { Save, ArrowLeft, Bot, Sparkles, Loader2, Download, Filter, CheckCircle2, FileText, Calendar, Phone, MapPin, Briefcase, AlertCircle, Clock, Map, Globe, User } from 'lucide-react';
 
 const GRADES: Grade[] = ['A+', 'A', 'B+', 'B', 'C', 'D'];
 
@@ -163,6 +163,10 @@ const LeadReview: React.FC = () => {
       rows.push(['Next Step', 'Notes', '-', lead.nextStep.notes || '']);
     }
 
+    if (lead.interviewer) {
+      rows.push(['Session Info', 'Interviewer', '-', lead.interviewer]);
+    }
+
     if (rows.length === 0) {
         alert("No answers recorded to export.");
         return;
@@ -306,6 +310,31 @@ const LeadReview: React.FC = () => {
           {activeTab === 'details' ? (
             <div className="space-y-8 sm:space-y-12">
               
+              {/* Session Info Block (New) */}
+              <div className="flex flex-col sm:flex-row gap-4 mb-4 pb-4 border-b border-neutral-100 dark:border-neutral-800">
+                 <div className="flex-1 flex items-center gap-3 p-3 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg border border-neutral-200 dark:border-neutral-800">
+                    <div className="w-10 h-10 rounded-full bg-indigo-100 dark:bg-indigo-900/30 flex items-center justify-center text-indigo-700 dark:text-indigo-400 font-bold text-lg">
+                      {lead.name.charAt(0).toUpperCase()}
+                    </div>
+                    <div>
+                      <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wide">Candidate</p>
+                      <p className="font-bold text-neutral-900 dark:text-white">{lead.name}</p>
+                    </div>
+                 </div>
+                 
+                 {lead.interviewer && (
+                   <div className="flex-1 flex items-center gap-3 p-3 bg-neutral-50 dark:bg-neutral-800/50 rounded-lg border border-neutral-200 dark:border-neutral-800">
+                      <div className="w-10 h-10 rounded-full bg-neutral-200 dark:bg-neutral-700 flex items-center justify-center text-neutral-600 dark:text-neutral-300">
+                        <User className="w-5 h-5" />
+                      </div>
+                      <div>
+                        <p className="text-xs text-neutral-500 dark:text-neutral-400 font-medium uppercase tracking-wide">Interviewer</p>
+                        <p className="font-bold text-neutral-900 dark:text-white">{lead.interviewer}</p>
+                      </div>
+                   </div>
+                 )}
+              </div>
+
               {/* Location Context Card */}
               {lead.cityInsights && (
                 <div className="bg-emerald-50 dark:bg-emerald-900/10 p-4 sm:p-6 rounded-2xl border border-emerald-100 dark:border-emerald-800 shadow-sm relative overflow-hidden mb-8 animate-in fade-in slide-in-from-top-4">

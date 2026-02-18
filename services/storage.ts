@@ -22,11 +22,12 @@ export const getLead = (id: string): Lead | undefined => {
   return leads.find((l) => l.id === id);
 };
 
-export const createLead = (name: string): Lead => {
+export const createLead = (name: string, interviewer?: string): Lead => {
   const leads = getLeads();
   const newLead: Lead = {
     id: uuidv4(),
     name,
+    interviewer: interviewer || '',
     createdAt: Date.now(),
     updatedAt: Date.now(),
     status: 'New',
