@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { getLeads, createLead, deleteLead, updateLead } from '../services/storage';
 import { Lead, SavedAnswer } from '../types';
-import { Plus, User, Clock, ChevronRight, Trash2, FileText, Upload, AlertCircle, CheckCircle, History, ListTodo, Calendar, Phone, MapPin, Briefcase, Download, PlayCircle } from 'lucide-react';
+import { Plus, User, Clock, ChevronRight, Trash2, FileText, Upload, AlertCircle, CheckCircle, History, ListTodo, Calendar, Phone, MapPin, Briefcase, Download, X, CheckSquare, Square } from 'lucide-react';
 import Papa from 'papaparse';
 
 const Dashboard: React.FC = () => {
@@ -11,12 +11,19 @@ const Dashboard: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'queue' | 'history'>('queue');
   const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  
   const fileInputRef = useRef<HTMLInputElement>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     setLeads(getLeads());
   }, []);
+
+  // Clear selection when tab changes to avoid confusion
+  useEffect(() => {
+    setSelectedIds(new Set());
+  }, [activeTab]);
 
   const handleCreate = (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,6 +41,42 @@ const Dashboard: React.FC = () => {
     if (confirm('Are you sure you want to delete this session?')) {
       deleteLead(id);
       setLeads(getLeads());
+      // Remove from selection if it was selected
+      if (selectedIds.has(id)) {
+        const newSet = new Set(selectedIds);
+        newSet.delete(id);
+        setSelectedIds(newSet);
+      }
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedIds.size === 0) return;
+    if (confirm(`Are you sure you want to delete ${selectedIds.size} selected session(s)? This cannot be undone.`)) {
+      selectedIds.forEach(id => deleteLead(id));
+      setLeads(getLeads());
+      setSelectedIds(new Set());
+    }
+  };
+
+  const toggleSelection = (e: React.MouseEvent, id: string) => {
+    e.preventDefault();
+    e.stopPropagation();
+    const newSet = new Set(selectedIds);
+    if (newSet.has(id)) {
+      newSet.delete(id);
+    } else {
+      newSet.add(id);
+    }
+    setSelectedIds(newSet);
+  };
+
+  const toggleSelectAll = () => {
+    if (selectedIds.size === displayedLeads.length) {
+      setSelectedIds(new Set());
+    } else {
+      const newSet = new Set(displayedLeads.map(l => l.id));
+      setSelectedIds(newSet);
     }
   };
 
@@ -42,7 +85,7 @@ const Dashboard: React.FC = () => {
       case 'Qualified': return 'bg-emerald-100 text-emerald-800 border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800';
       case 'Disqualified': return 'bg-red-50 text-red-600 border-red-100 decoration-red-300 dark:bg-red-900/20 dark:text-red-400 dark:border-red-900/50';
       case 'Review': return 'bg-amber-100 text-amber-800 border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800';
-      default: return 'bg-blue-50 text-blue-700 border-blue-200 dark:bg-blue-900/20 dark:text-blue-300 dark:border-blue-900/50';
+      default: return 'bg-indigo-50 text-indigo-700 border-indigo-200 dark:bg-indigo-900/20 dark:text-indigo-300 dark:border-indigo-900/50';
     }
   };
 
@@ -57,9 +100,12 @@ const Dashboard: React.FC = () => {
   };
 
   const handleBulkExport = () => {
-    const historyLeads = leads.filter(l => ['Review', 'Qualified', 'Disqualified'].includes(l.status));
-    if (historyLeads.length === 0) {
-      alert("No history to export.");
+    const leadsToExport = selectedIds.size > 0 
+      ? leads.filter(l => selectedIds.has(l.id))
+      : leads.filter(l => ['Review', 'Qualified', 'Disqualified'].includes(l.status));
+
+    if (leadsToExport.length === 0) {
+      alert("No data to export.");
       return;
     }
 
@@ -68,7 +114,7 @@ const Dashboard: React.FC = () => {
       'Investment Budget', '10 Vehicle Commit', 'Timeline', 'Experience', 'Biz Model Awareness'
     ];
 
-    const rows = historyLeads.map(lead => [
+    const rows = leadsToExport.map(lead => [
       lead.name,
       lead.status,
       new Date(lead.createdAt).toLocaleDateString(),
@@ -76,7 +122,6 @@ const Dashboard: React.FC = () => {
       lead.nextStep?.status || '-',
       lead.nextStep?.date ? new Date(lead.nextStep.date).toLocaleString() : '-',
       lead.generalNotes || '',
-      // Strategic Answers (using new mapping IDs)
       lead.answers['q_inv_range']?.answer || lead.answers['q_inv_range']?.importedAnswer || '-',
       lead.answers['q_fleet_scale']?.answer || lead.answers['q_fleet_scale']?.importedAnswer || '-',
       lead.answers['q_timeline']?.answer || lead.answers['q_timeline']?.importedAnswer || '-',
@@ -90,7 +135,7 @@ const Dashboard: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `FranchiseScreen_History_Export_${new Date().toISOString().slice(0,10)}.csv`;
+    link.download = `FranchiseScreen_Export_${new Date().toISOString().slice(0,10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -107,36 +152,27 @@ const Dashboard: React.FC = () => {
       skipEmptyLines: true,
       complete: (results) => {
         try {
-          const currentLeads = getLeads(); // Fetch latest leads from storage to check duplicates
+          const currentLeads = getLeads();
           let importedCount = 0;
           let skippedCount = 0;
           
-          // We assume the sheet grows downwards. We process normally.
           const rows = [...results.data];
 
           rows.forEach((row: any) => {
             const fullName = row['full_name'] || row['Full Name'] || 'Unknown Candidate';
             if (!fullName || fullName === 'Unknown Candidate') return;
 
-            // Extract identifiers for duplicate check
-            const rowPhone = (row['phone_number'] || row['Phone Number'] || '').toString().trim().replace(/\D/g, ''); // strip non-digits
+            const rowPhone = (row['phone_number'] || row['Phone Number'] || '').toString().trim().replace(/\D/g, ''); 
             const rowEmail = (row['email'] || row['Email'] || '').toString().trim().toLowerCase();
             const rowNameClean = fullName.trim().toLowerCase();
 
-            // Duplicate Check Logic
             const isDuplicate = currentLeads.some(existing => {
-              // 1. Check Name Match
               const existingName = existing.name.trim().toLowerCase();
               if (existingName === rowNameClean) return true;
-
-              // 2. Check Phone Match (if present in CSV)
               const existingPhone = (existing.answers['q_contact']?.importedAnswer || existing.answers['q_contact']?.answer || '').toString().replace(/\D/g, '');
               if (rowPhone.length > 5 && existingPhone.length > 5 && rowPhone === existingPhone) return true;
-
-              // 3. Check Email Match (if present in CSV)
               const existingEmail = (existing.answers['q_email']?.importedAnswer || existing.answers['q_email']?.answer || '').toString().trim().toLowerCase();
               if (rowEmail.length > 5 && existingEmail.length > 5 && rowEmail === existingEmail) return true;
-
               return false;
             });
 
@@ -145,9 +181,7 @@ const Dashboard: React.FC = () => {
               return;
             }
 
-            // Create new lead if no duplicate found
             const newLead = createLead(fullName);
-            
             const answersToMap: Record<string, string> = {
               'q_city': row['city'] || row['City'],
               'q_contact': row['phone_number'] || row['Phone Number'],
@@ -165,7 +199,6 @@ const Dashboard: React.FC = () => {
             };
 
             const updatedAnswers = { ...newLead.answers };
-
             Object.entries(answersToMap).forEach(([qId, val]) => {
               if (val && typeof val === 'string' && val.trim() !== '') {
                 updatedAnswers[qId] = {
@@ -178,11 +211,7 @@ const Dashboard: React.FC = () => {
               }
             });
 
-            updateLead({
-              ...newLead,
-              answers: updatedAnswers,
-              status: 'New'
-            });
+            updateLead({ ...newLead, answers: updatedAnswers, status: 'New' });
             importedCount++;
           });
 
@@ -208,7 +237,6 @@ const Dashboard: React.FC = () => {
 
   const queueLeads = leads.filter(l => ['New', 'In Progress'].includes(l.status));
   const historyLeads = leads.filter(l => ['Review', 'Qualified', 'Disqualified'].includes(l.status));
-
   const displayedLeads = activeTab === 'queue' ? queueLeads : historyLeads;
 
   return (
@@ -218,29 +246,52 @@ const Dashboard: React.FC = () => {
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">Lead Dashboard</h1>
           <p className="text-neutral-500 dark:text-neutral-400">Manage your screening queue and history.</p>
         </div>
-        <div className="flex flex-wrap gap-3">
-          <input 
-            type="file" 
-            ref={fileInputRef}
-            onChange={handleFileUpload}
-            accept=".csv"
-            className="hidden"
-          />
-          <button 
-            onClick={() => fileInputRef.current?.click()}
-            className="bg-white hover:bg-neutral-50 dark:bg-neutral-900 dark:hover:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 px-4 py-2.5 rounded-lg shadow-sm font-medium flex items-center gap-2 transition-all active:scale-95 group"
-          >
-            <Upload className="w-4 h-4 text-blue-600 dark:text-blue-400 group-hover:scale-110 transition-transform" />
-            Import CSV
-          </button>
-          <button 
-            onClick={() => setIsModalOpen(true)}
-            className="bg-black hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-200 text-white dark:text-black px-4 py-2.5 rounded-lg shadow-md font-medium flex items-center gap-2 transition-all active:scale-95 group"
-          >
-            <Plus className="w-4 h-4 text-emerald-400 dark:text-emerald-600 group-hover:rotate-90 transition-transform" />
-            New Session
-          </button>
-        </div>
+        
+        {selectedIds.size > 0 ? (
+           <div className="flex items-center gap-3 animate-in fade-in slide-in-from-right-4">
+              <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{selectedIds.size} Selected</span>
+              <button 
+                onClick={handleBulkDelete}
+                className="bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 px-4 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-colors border border-red-200 dark:border-red-900/50"
+              >
+                <Trash2 className="w-4 h-4" />
+                Delete Selected
+              </button>
+              {activeTab === 'history' && (
+                <button 
+                  onClick={handleBulkExport}
+                  className="bg-white hover:bg-neutral-50 dark:bg-neutral-900 dark:hover:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 px-4 py-2.5 rounded-lg shadow-sm font-medium flex items-center gap-2 transition-all"
+                >
+                  <Download className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
+                  Export Selected
+                </button>
+              )}
+           </div>
+        ) : (
+          <div className="flex flex-wrap gap-3">
+            <input 
+              type="file" 
+              ref={fileInputRef}
+              onChange={handleFileUpload}
+              accept=".csv"
+              className="hidden"
+            />
+            <button 
+              onClick={() => fileInputRef.current?.click()}
+              className="bg-white hover:bg-neutral-50 dark:bg-neutral-900 dark:hover:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 px-4 py-2.5 rounded-lg shadow-sm font-medium flex items-center gap-2 transition-all active:scale-95 group"
+            >
+              <Upload className="w-4 h-4 text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform" />
+              Import CSV
+            </button>
+            <button 
+              onClick={() => setIsModalOpen(true)}
+              className="bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400 text-white px-4 py-2.5 rounded-lg shadow-md font-medium flex items-center gap-2 transition-all active:scale-95 group"
+            >
+              <Plus className="w-4 h-4 text-white/90 group-hover:rotate-90 transition-transform" />
+              New Session
+            </button>
+          </div>
+        )}
       </div>
 
       {importStatus && (
@@ -250,22 +301,22 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Tabs */}
+      {/* Tabs & Filters */}
       <div className="flex flex-wrap items-center justify-between gap-4">
         <div className="flex gap-1 bg-neutral-100 dark:bg-neutral-900 p-1.5 rounded-xl w-fit border border-neutral-200 dark:border-neutral-800">
           <button
             onClick={() => setActiveTab('queue')}
             className={`px-5 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all
-              ${activeTab === 'queue' ? 'bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-sm ring-1 ring-black/5 dark:ring-white/10' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'}
+              ${activeTab === 'queue' ? 'bg-white dark:bg-neutral-800 text-indigo-600 dark:text-white shadow-sm ring-1 ring-black/5 dark:ring-white/10' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'}
             `}
           >
-            <ListTodo className={`w-4 h-4 ${activeTab === 'queue' ? 'text-blue-600 dark:text-blue-400' : ''}`} />
+            <ListTodo className={`w-4 h-4 ${activeTab === 'queue' ? 'text-indigo-600 dark:text-indigo-400' : ''}`} />
             Queue ({queueLeads.length})
           </button>
           <button
             onClick={() => setActiveTab('history')}
             className={`px-5 py-2 rounded-lg text-sm font-bold flex items-center gap-2 transition-all
-              ${activeTab === 'history' ? 'bg-white dark:bg-neutral-800 text-neutral-900 dark:text-white shadow-sm ring-1 ring-black/5 dark:ring-white/10' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'}
+              ${activeTab === 'history' ? 'bg-white dark:bg-neutral-800 text-indigo-600 dark:text-white shadow-sm ring-1 ring-black/5 dark:ring-white/10' : 'text-neutral-500 dark:text-neutral-400 hover:text-neutral-700 dark:hover:text-neutral-200'}
             `}
           >
             <History className={`w-4 h-4 ${activeTab === 'history' ? 'text-purple-600 dark:text-purple-400' : ''}`} />
@@ -273,14 +324,14 @@ const Dashboard: React.FC = () => {
           </button>
         </div>
 
-        {activeTab === 'history' && historyLeads.length > 0 && (
-          <button 
-            onClick={handleBulkExport}
-            className="flex items-center gap-2 text-sm font-medium text-neutral-600 dark:text-neutral-400 hover:text-emerald-600 dark:hover:text-emerald-400 transition-colors"
-          >
-            <Download className="w-4 h-4" />
-            Export All History
-          </button>
+        {displayedLeads.length > 0 && (
+           <button 
+             onClick={toggleSelectAll}
+             className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors flex items-center gap-1.5"
+           >
+             {selectedIds.size === displayedLeads.length ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
+             {selectedIds.size === displayedLeads.length ? 'Deselect All' : 'Select All'}
+           </button>
         )}
       </div>
 
@@ -293,77 +344,109 @@ const Dashboard: React.FC = () => {
           </div>
         ) : (
           <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {displayedLeads.map((lead) => (
-              <Link 
-                key={lead.id} 
-                to={activeTab === 'queue' ? `/screen/${lead.id}` : `/review/${lead.id}`}
-                className="block p-5 hover:bg-neutral-50 dark:hover:bg-neutral-800/50 transition-colors group"
-              >
-                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                  <div className="flex items-center gap-4">
-                    <div className={`w-12 h-12 rounded-full flex items-center justify-center font-bold text-lg shrink-0 border 
-                      ${activeTab === 'queue' ? 'bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-neutral-900 dark:text-white' : 'bg-neutral-100 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400'}`}>
-                      {lead.name.charAt(0).toUpperCase()}
+            {displayedLeads.map((lead) => {
+               const isSelected = selectedIds.has(lead.id);
+               return (
+                <div 
+                  key={lead.id} 
+                  className={`group relative p-4 transition-all hover:bg-neutral-50 dark:hover:bg-neutral-800/50 
+                    ${isSelected ? 'bg-indigo-50/60 dark:bg-indigo-900/10' : ''}
+                  `}
+                >
+                  <div className="flex items-start gap-3 md:gap-4">
+                    {/* Checkbox - Aligned with Name visually */}
+                    <div className="pt-1">
+                        <button
+                            onClick={(e) => toggleSelection(e, lead.id)}
+                            className="text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
+                        >
+                            {isSelected ? (
+                                <CheckSquare className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+                            ) : (
+                                <Square className="w-5 h-5" />
+                            )}
+                        </button>
                     </div>
-                    <div>
-                      <h3 className="font-bold text-neutral-900 dark:text-white text-lg group-hover:text-blue-600 dark:group-hover:text-blue-400 transition-colors">
-                        {lead.name}
-                      </h3>
-                      <div className="flex flex-wrap items-center gap-3 text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-                        <span className="flex items-center gap-1">
-                          <Clock className="w-3.5 h-3.5" />
-                          {new Date(lead.createdAt).toLocaleDateString()}
-                        </span>
-                        
-                        <span className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${getStatusColor(lead.status)}`}>
-                          {lead.status}
-                        </span>
 
-                        {lead.internalScore.overallRating && (
-                           <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-neutral-900 dark:bg-white text-white dark:text-black border border-black dark:border-white">
-                             Grade: {lead.internalScore.overallRating}
-                           </span>
-                        )}
+                    {/* Main Content */}
+                    <Link 
+                        to={activeTab === 'queue' ? `/screen/${lead.id}` : `/review/${lead.id}`} 
+                        className="flex-1 min-w-0 flex items-start gap-3 md:gap-4 group-hover:opacity-90 transition-opacity"
+                    >
+                        {/* Avatar */}
+                        <div className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center font-bold text-base md:text-lg shrink-0 border 
+                        ${activeTab === 'queue' ? 'bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-indigo-700 dark:text-white' : 'bg-neutral-100 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400'}`}>
+                        {lead.name.charAt(0).toUpperCase()}
+                        </div>
 
-                        {/* Next Step Indicator in History */}
-                        {lead.nextStep && activeTab === 'history' && (
-                          <span className="flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300">
-                            {getNextStepIcon(lead.nextStep.status)}
-                            {lead.nextStep.status}
-                            {lead.nextStep.date && ` • ${new Date(lead.nextStep.date).toLocaleDateString()}`}
-                          </span>
-                        )}
+                        {/* Text Details */}
+                        <div className="min-w-0 flex-1 pt-0.5">
+                            <h3 className="font-bold text-neutral-900 dark:text-white text-base md:text-lg truncate pr-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                {lead.name}
+                            </h3>
+                            
+                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs md:text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+                                <span className="flex items-center gap-1 shrink-0">
+                                    <Clock className="w-3.5 h-3.5" />
+                                    {new Date(lead.createdAt).toLocaleDateString()}
+                                </span>
+                                
+                                <span className={`px-2 py-0.5 rounded-full text-[10px] md:text-xs font-medium border shrink-0 ${getStatusColor(lead.status)}`}>
+                                    {lead.status}
+                                </span>
 
-                        {Object.values(lead.answers).some((a: SavedAnswer) => !!a.importedAnswer) && lead.status === 'New' && (
-                          <span className="px-2 py-0.5 rounded-full text-xs font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 flex items-center gap-1">
-                            <FileText className="w-3 h-3" /> Imported
-                          </span>
+                                {/* Grade Badge */}
+                                {lead.internalScore.overallRating && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] md:text-xs font-bold bg-neutral-900 dark:bg-white text-white dark:text-black border border-black dark:border-white shrink-0">
+                                    Grade: {lead.internalScore.overallRating}
+                                    </span>
+                                )}
+
+                                {/* Next Step Badge */}
+                                {lead.nextStep && activeTab === 'history' && (
+                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] md:text-xs font-semibold bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 shrink-0">
+                                    {getNextStepIcon(lead.nextStep.status)}
+                                    <span className="truncate max-w-[100px]">{lead.nextStep.status}</span>
+                                    </span>
+                                )}
+
+                                {Object.values(lead.answers).some((a: SavedAnswer) => !!a.importedAnswer) && lead.status === 'New' && (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] md:text-xs font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 flex items-center gap-1 shrink-0">
+                                    <FileText className="w-3 h-3" /> Imported
+                                </span>
+                                )}
+                            </div>
+                        </div>
+                    </Link>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-1 md:gap-2 shrink-0 self-center md:self-auto pt-1">
+                        {activeTab === 'queue' ? (
+                             <Link 
+                             to={`/screen/${lead.id}`}
+                             className="text-sm font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1 p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
+                           >
+                             <span className="hidden md:inline">Start</span> <ChevronRight className="w-5 h-5" />
+                           </Link>
+                        ) : (
+                            <>
+                                <button 
+                                    onClick={(e) => handleDelete(e, lead.id)}
+                                    className="p-2 text-neutral-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors"
+                                    title="Delete"
+                                >
+                                    <Trash2 className="w-5 h-5" />
+                                </button>
+                                <Link to={`/review/${lead.id}`} className="p-2 text-neutral-300 dark:text-neutral-600 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+                                    <ChevronRight className="w-5 h-5" />
+                                </Link>
+                            </>
                         )}
-                      </div>
                     </div>
-                  </div>
-                  
-                  <div className="flex items-center justify-end gap-3 pl-16 sm:pl-0">
-                     {activeTab === 'queue' ? (
-                       <span className="text-sm font-bold text-blue-600 dark:text-blue-400 flex items-center gap-1 group-hover:translate-x-1 transition-transform">
-                         Start <ChevronRight className="w-4 h-4" />
-                       </span>
-                     ) : (
-                       <div className="flex items-center gap-2">
-                          <button 
-                            onClick={(e) => handleDelete(e, lead.id)}
-                            className="p-2 text-neutral-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors"
-                            title="Delete"
-                          >
-                            <Trash2 className="w-5 h-5" />
-                          </button>
-                          <ChevronRight className="w-5 h-5 text-neutral-300 dark:text-neutral-600 group-hover:text-neutral-500 dark:group-hover:text-neutral-400" />
-                       </div>
-                     )}
                   </div>
                 </div>
-              </Link>
-            ))}
+               );
+            })}
           </div>
         )}
       </div>
@@ -380,7 +463,7 @@ const Dashboard: React.FC = () => {
                   type="text" 
                   value={newLeadName}
                   onChange={(e) => setNewLeadName(e.target.value)}
-                  className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-black dark:focus:ring-white focus:border-black dark:focus:border-white outline-none transition-all dark:text-white"
+                  className="w-full px-4 py-3 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-lg focus:ring-2 focus:ring-indigo-600 dark:focus:ring-indigo-500 focus:border-indigo-600 dark:focus:border-indigo-500 outline-none transition-all dark:text-white"
                   placeholder="e.g. John Doe"
                 />
               </div>
@@ -395,7 +478,7 @@ const Dashboard: React.FC = () => {
                 <button 
                   type="submit"
                   disabled={!newLeadName.trim()}
-                  className="px-5 py-2.5 bg-black dark:bg-white text-white dark:text-black rounded-lg hover:bg-neutral-800 dark:hover:bg-neutral-200 font-bold disabled:opacity-50 transition-colors shadow-lg"
+                  className="px-5 py-2.5 bg-indigo-600 dark:bg-indigo-500 text-white rounded-lg hover:bg-indigo-700 dark:hover:bg-indigo-400 font-bold disabled:opacity-50 transition-colors shadow-lg"
                 >
                   Start Session
                 </button>

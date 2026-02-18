@@ -34,7 +34,8 @@ export const createLead = (name: string): Lead => {
     internalScore: { ...defaultScore },
     generalNotes: '',
   };
-  leads.unshift(newLead);
+  // Changed from unshift to push to maintain chronological/CSV order
+  leads.push(newLead);
   localStorage.setItem(STORAGE_KEY, JSON.stringify(leads));
   return newLead;
 };

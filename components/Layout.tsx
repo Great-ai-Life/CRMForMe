@@ -27,8 +27,8 @@ const Layout: React.FC = () => {
       <header className="bg-white dark:bg-neutral-900 border-b border-neutral-200 dark:border-neutral-800 sticky top-0 z-50 transition-colors duration-200">
         <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <Link to="/" className="flex items-center gap-3 group">
-            <div className="bg-black dark:bg-white p-2 rounded-lg group-hover:bg-neutral-800 dark:group-hover:bg-neutral-200 transition-colors shadow-sm">
-              <LayoutDashboard className="w-5 h-5 text-white dark:text-black" />
+            <div className="bg-indigo-600 dark:bg-indigo-500 p-2 rounded-lg group-hover:bg-indigo-700 dark:group-hover:bg-indigo-400 transition-colors shadow-sm">
+              <LayoutDashboard className="w-5 h-5 text-white" />
             </div>
             <span className="font-bold text-xl text-neutral-900 dark:text-white tracking-tight">FranchiseScreen<span className="text-neutral-400 dark:text-neutral-500">Pro</span></span>
           </Link>

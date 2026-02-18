@@ -46,4 +46,5 @@ export interface Lead {
   internalScore: InternalScore;
   nextStep?: NextStep;
   generalNotes?: string; // Free text notes for the entire session
+  cityInsights?: string; // Groq AI analysis of the location
 }

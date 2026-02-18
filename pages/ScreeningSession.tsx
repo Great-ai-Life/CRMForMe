@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { getLead, updateLead } from '../services/storage';
+import { fetchCityInsights } from '../services/groqService';
 import { Lead } from '../types';
 import { SECTIONS } from '../constants';
-import { ChevronLeft, CheckCircle2, Circle, ArrowRight, X, PenLine, Sparkles, Copy, Lightbulb } from 'lucide-react';
+import { ChevronLeft, CheckCircle2, Circle, ArrowRight, X, PenLine, Sparkles, Copy, Lightbulb, Map, Loader2, Globe, MapPin } from 'lucide-react';
 
 const ScreeningSession: React.FC = () => {
   const { leadId } = useParams<{ leadId: string }>();
@@ -13,6 +14,7 @@ const ScreeningSession: React.FC = () => {
   const [activeQuestionId, setActiveQuestionId] = useState<string | null>(null);
   const [tempAnswer, setTempAnswer] = useState('');
   const [showInsight, setShowInsight] = useState(true);
+  const [isLocating, setIsLocating] = useState(false);
 
   const questionInputRef = useRef<HTMLTextAreaElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -94,6 +96,29 @@ const ScreeningSession: React.FC = () => {
     }
   };
 
+  const runLocationAnalysis = async () => {
+    const city = lead.answers['q_city']?.answer || lead.answers['q_city']?.importedAnswer;
+    if (!city) {
+      alert("No city found. Please ensure 'City' is filled in Section 1.");
+      return;
+    }
+    
+    setIsLocating(true);
+    const insights = await fetchCityInsights(city);
+    
+    if (insights) {
+      const updatedLead = {
+        ...lead,
+        cityInsights: insights
+      };
+      setLead(updatedLead);
+      updateLead(updatedLead);
+    } else {
+      alert("Location analysis failed. Please check your Groq API Key.");
+    }
+    setIsLocating(false);
+  };
+
   const nextSection = () => {
     if (activeSectionIndex < SECTIONS.length - 1) {
       setActiveSectionIndex(prev => prev + 1);
@@ -121,17 +146,29 @@ const ScreeningSession: React.FC = () => {
       {/* Header / Progress */}
       <div className="mb-4 flex-none px-1">
         <div className="flex items-center justify-between mb-3">
-           <h2 className="text-xl font-bold text-neutral-900 dark:text-white truncate pr-2">
-             <span className="text-neutral-400 dark:text-neutral-500 font-medium mr-2 text-base">Sec {activeSectionIndex + 1}</span>
-             {currentSection.title.replace(/Section \d+: /, '')}
+           <h2 className="text-xl font-bold text-neutral-900 dark:text-white truncate pr-2 flex items-center gap-2">
+             <span className="text-neutral-400 dark:text-neutral-500 font-medium text-base hidden xs:inline">Sec {activeSectionIndex + 1}</span>
+             <span className="truncate">{currentSection.title.replace(/Section \d+: /, '')}</span>
            </h2>
-           <span className="text-xs font-bold text-neutral-500 dark:text-neutral-400 bg-neutral-100 dark:bg-neutral-800 px-2.5 py-1 rounded-full whitespace-nowrap border border-neutral-200 dark:border-neutral-700">
-             {activeSectionIndex + 1} / {SECTIONS.length}
-           </span>
+           
+           <div className="flex items-center gap-2">
+             <button 
+                onClick={runLocationAnalysis}
+                disabled={isLocating}
+                className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-100 dark:bg-emerald-900/30 text-emerald-700 dark:text-emerald-300 border border-emerald-200 dark:border-emerald-800 rounded-lg hover:bg-emerald-200 dark:hover:bg-emerald-900/50 disabled:opacity-70 text-xs font-bold transition-colors"
+             >
+                {isLocating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Map className="w-3.5 h-3.5" />}
+                <span className="hidden sm:inline">Location</span>
+             </button>
+
+             <span className="text-xs font-bold text-indigo-600 dark:text-indigo-400 bg-indigo-50 dark:bg-indigo-900/20 px-2.5 py-1.5 rounded-lg border border-indigo-100 dark:border-indigo-800">
+               {activeSectionIndex + 1} / {SECTIONS.length}
+             </span>
+           </div>
         </div>
         <div className="w-full bg-neutral-200 dark:bg-neutral-800 rounded-full h-1.5 overflow-hidden">
           <div 
-            className="bg-black dark:bg-white h-1.5 rounded-full transition-all duration-500 ease-out" 
+            className="bg-indigo-600 dark:bg-indigo-500 h-1.5 rounded-full transition-all duration-500 ease-out" 
             style={{ width: `${progressPercent}%` }}
           />
         </div>
@@ -139,6 +176,22 @@ const ScreeningSession: React.FC = () => {
 
       {/* Main Content Area */}
       <div ref={listRef} className="flex-1 overflow-y-auto pb-48 scroll-smooth px-1">
+        
+        {/* Location Intelligence Card - Visible inside sections */}
+        {lead.cityInsights && (
+            <div className="bg-emerald-50 dark:bg-emerald-900/10 p-4 rounded-xl border border-emerald-100 dark:border-emerald-800 shadow-sm relative overflow-hidden mb-6 animate-in fade-in slide-in-from-top-4">
+                <div className="absolute top-0 right-0 p-3 opacity-10">
+                <Globe className="w-16 h-16 dark:text-white" />
+                </div>
+                <div className="flex items-center gap-2 mb-2 text-emerald-900 dark:text-emerald-300 font-bold text-sm uppercase tracking-wide">
+                <MapPin className="w-4 h-4 text-emerald-600 dark:text-emerald-400" /> Location Intelligence
+                </div>
+                <div className="text-neutral-700 dark:text-neutral-300 text-sm leading-relaxed relative z-10 whitespace-pre-line">
+                {lead.cityInsights}
+                </div>
+            </div>
+        )}
+
         <p className="text-xs font-bold text-neutral-400 dark:text-neutral-600 mb-4 uppercase tracking-wider pl-1">
           Tap Question to Select
         </p>
@@ -156,20 +209,20 @@ const ScreeningSession: React.FC = () => {
                 onClick={() => handleSelectQuestion(q.id)}
                 className={`w-full text-left p-5 rounded-xl border transition-all duration-200 relative group
                   ${isActive 
-                    ? 'bg-neutral-50 dark:bg-neutral-900 border-black dark:border-white ring-1 ring-black dark:ring-white shadow-md z-10' 
-                    : (isSelected ? 'bg-neutral-50 dark:bg-neutral-900 border-neutral-300 dark:border-neutral-700' : 'bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 hover:border-neutral-400 dark:hover:border-neutral-600 hover:shadow-sm')
+                    ? 'bg-indigo-50 dark:bg-indigo-900/10 border-indigo-600 dark:border-indigo-400 ring-1 ring-indigo-600 dark:ring-indigo-400 shadow-md z-10' 
+                    : (isSelected ? 'bg-neutral-50 dark:bg-neutral-900 border-neutral-300 dark:border-neutral-700' : 'bg-white dark:bg-neutral-900 border-neutral-200 dark:border-neutral-800 hover:border-indigo-300 dark:hover:border-indigo-700 hover:shadow-sm')
                   }
                 `}
               >
                 <div className="flex items-start gap-4">
                   <div className={`mt-0.5 min-w-[24px] transition-colors
-                     ${isActive ? 'text-black dark:text-white' : (isSelected ? 'text-emerald-500' : 'text-neutral-300 dark:text-neutral-600 group-hover:text-neutral-400')}
+                     ${isActive ? 'text-indigo-600 dark:text-indigo-400' : (isSelected ? 'text-emerald-500' : 'text-neutral-300 dark:text-neutral-600 group-hover:text-indigo-300 dark:group-hover:text-indigo-700')}
                   `}>
                     {(isActive || isSelected) ? <CheckCircle2 className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
                   </div>
                   <div className="flex-1">
                     <div className="flex justify-between items-start gap-2">
-                       <p className={`font-medium text-lg leading-snug transition-colors ${isActive ? 'text-neutral-900 dark:text-white' : (isSelected ? 'text-neutral-800 dark:text-neutral-200' : 'text-neutral-600 dark:text-neutral-400')}`}>
+                       <p className={`font-medium text-lg leading-snug transition-colors ${isActive ? 'text-indigo-900 dark:text-white' : (isSelected ? 'text-neutral-800 dark:text-neutral-200' : 'text-neutral-600 dark:text-neutral-400')}`}>
                          {q.text}
                        </p>
                        {hasImportedData && !isActive && !hasAnswerText && (
@@ -199,7 +252,7 @@ const ScreeningSession: React.FC = () => {
         <div className="fixed inset-x-0 bottom-0 bg-white dark:bg-neutral-900 border-t border-neutral-200 dark:border-neutral-800 shadow-[0_-8px_30px_rgba(0,0,0,0.1)] p-5 z-50 animate-in slide-in-from-bottom-5 duration-200 flex flex-col gap-4 rounded-t-3xl md:static md:border md:rounded-xl md:shadow-lg md:mb-4">
            
            <div className="flex justify-between items-center px-1">
-              <span className="text-xs font-bold text-neutral-900 dark:text-white uppercase tracking-widest">Input Note</span>
+              <span className="text-xs font-bold text-indigo-900 dark:text-indigo-200 uppercase tracking-widest">Input Note</span>
               <button 
                 onClick={() => setActiveQuestionId(null)} 
                 className="p-2 -mr-2 text-neutral-400 hover:text-neutral-900 dark:hover:text-white hover:bg-neutral-100 dark:hover:bg-neutral-800 rounded-full transition-colors"
@@ -235,7 +288,7 @@ const ScreeningSession: React.FC = () => {
               value={tempAnswer}
               onChange={(e) => setTempAnswer(e.target.value)}
               placeholder="Type notes or verify import..."
-              className="w-full p-4 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl focus:ring-2 focus:ring-black/10 dark:focus:ring-white/10 focus:border-black dark:focus:border-white outline-none resize-none text-neutral-900 dark:text-white h-28 text-base shadow-inner transition-all"
+              className="w-full p-4 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-2xl focus:ring-2 focus:ring-indigo-500/50 dark:focus:ring-indigo-400/50 focus:border-indigo-600 dark:focus:border-indigo-400 outline-none resize-none text-neutral-900 dark:text-white h-28 text-base shadow-inner transition-all"
            />
 
            <div className="flex gap-3">
@@ -247,7 +300,7 @@ const ScreeningSession: React.FC = () => {
              </button>
              <button 
                onClick={handleConfirmAndNext}
-               className="flex-[2] px-4 py-3.5 bg-black dark:bg-white text-white dark:text-black rounded-xl font-bold shadow-md hover:bg-neutral-800 dark:hover:bg-neutral-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
+               className="flex-[2] px-4 py-3.5 bg-indigo-600 dark:bg-indigo-500 text-white rounded-xl font-bold shadow-md hover:bg-indigo-700 dark:hover:bg-indigo-400 active:scale-[0.98] transition-all flex items-center justify-center gap-2"
              >
                {isLastSection ? 'Confirm & Finish' : 'Confirm & Next'} 
                <ArrowRight className="w-5 h-5" />
@@ -268,7 +321,7 @@ const ScreeningSession: React.FC = () => {
            
            <button 
              onClick={nextSection}
-             className="flex-1 bg-black dark:bg-white text-white dark:text-black rounded-xl font-bold shadow-lg hover:bg-neutral-800 dark:hover:bg-neutral-200 active:scale-[0.98] transition-all flex items-center justify-center gap-2 py-3.5"
+             className="flex-1 bg-indigo-600 dark:bg-indigo-500 text-white rounded-xl font-bold shadow-lg hover:bg-indigo-700 dark:hover:bg-indigo-400 active:scale-[0.98] transition-all flex items-center justify-center gap-2 py-3.5"
            >
              {isLastSection ? 'Finish Screening' : 'Next Section'}
              <ArrowRight className="w-5 h-5" />
