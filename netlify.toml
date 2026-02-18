@@ -1,0 +1,10 @@
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+# This part is critical for React Router (Single Page Apps)
+# It tells Netlify to send all requests to index.html so React can handle the routing
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
