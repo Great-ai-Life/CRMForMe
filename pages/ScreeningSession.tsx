@@ -4,7 +4,7 @@ import { getLead, updateLead } from '../services/storage';
 import { fetchCityInsights } from '../services/groqService';
 import { Lead } from '../types';
 import { SECTIONS } from '../constants';
-import { ChevronLeft, CheckCircle2, Circle, ArrowRight, X, PenLine, Sparkles, Copy, Lightbulb, Map, Loader2, Globe, MapPin } from 'lucide-react';
+import { ChevronLeft, CheckCircle2, Circle, ArrowRight, X, PenLine, Sparkles, Copy, Lightbulb, Map, Loader2, Globe, MapPin, Check } from 'lucide-react';
 
 const ScreeningSession: React.FC = () => {
   const { leadId } = useParams<{ leadId: string }>();
@@ -36,6 +36,9 @@ const ScreeningSession: React.FC = () => {
   useEffect(() => {
     if (activeQuestionId && questionInputRef.current) {
       questionInputRef.current.focus();
+      // Move cursor to end if text exists
+      const val = questionInputRef.current.value;
+      questionInputRef.current.setSelectionRange(val.length, val.length);
     }
     setShowInsight(true);
   }, [activeQuestionId]);
@@ -52,7 +55,12 @@ const ScreeningSession: React.FC = () => {
 
   const handleSelectQuestion = (qId: string) => {
     const existing = lead.answers[qId]?.answer || '';
-    setTempAnswer(existing);
+    const imported = lead.answers[qId]?.importedAnswer || '';
+    
+    // Auto-fill logic: if no existing answer but imported exists, use imported
+    const initialValue = existing.trim() !== '' ? existing : imported;
+    
+    setTempAnswer(initialValue);
     setActiveQuestionId(qId);
   };
 
@@ -79,9 +87,16 @@ const ScreeningSession: React.FC = () => {
 
     if (moveNext) {
       setTimeout(() => {
-        nextSection();
+        // If we want to auto-advance, we can logic here, 
+        // but often staying on page is better for non-linear.
+        // For now, we stay on list view as requested "skip process".
       }, 100); 
     }
+  };
+
+  const handleQuickAccept = (e: React.MouseEvent, qId: string, text: string) => {
+    e.stopPropagation(); // Prevent opening the modal
+    saveAnswer(qId, text, false);
   };
 
   const handleConfirmAndNext = () => {
@@ -139,6 +154,8 @@ const ScreeningSession: React.FC = () => {
   const isLastSection = activeSectionIndex === SECTIONS.length - 1;
 
   const activeAnswerObj = activeQuestionId ? lead.answers[activeQuestionId] : null;
+  // We only show the "Tip" popup if the text hasn't been auto-filled already
+  // Since we auto-fill now, we might not need the popup as much, but we keep it if user clears text.
   const importedData = activeAnswerObj?.importedAnswer;
 
   return (
@@ -200,7 +217,8 @@ const ScreeningSession: React.FC = () => {
             const answerObj = lead.answers[q.id];
             const isSelected = answerObj?.selected;
             const hasAnswerText = answerObj?.answer && answerObj.answer.length > 0;
-            const hasImportedData = !!answerObj?.importedAnswer;
+            const importedText = answerObj?.importedAnswer;
+            const hasImportedData = !!importedText;
             const isActive = activeQuestionId === q.id;
 
             return (
@@ -220,22 +238,40 @@ const ScreeningSession: React.FC = () => {
                   `}>
                     {(isActive || isSelected) ? <CheckCircle2 className="w-6 h-6" /> : <Circle className="w-6 h-6" />}
                   </div>
-                  <div className="flex-1">
+                  <div className="flex-1 min-w-0">
                     <div className="flex justify-between items-start gap-2">
                        <p className={`font-medium text-lg leading-snug transition-colors ${isActive ? 'text-indigo-900 dark:text-white' : (isSelected ? 'text-neutral-800 dark:text-neutral-200' : 'text-neutral-600 dark:text-neutral-400')}`}>
                          {q.text}
                        </p>
-                       {hasImportedData && !isActive && !hasAnswerText && (
-                         <span className="shrink-0 text-amber-500 animate-pulse">
-                           <Lightbulb className="w-4 h-4" />
-                         </span>
+                       
+                       {/* Quick Accept Button for Imports */}
+                       {hasImportedData && !hasAnswerText && !isActive && (
+                         <div 
+                           onClick={(e) => handleQuickAccept(e, q.id, importedText)}
+                           className="shrink-0 p-2 -my-2 -mr-2 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-900/30 rounded-lg transition-colors z-20"
+                           title="Quick Accept Import"
+                         >
+                           <Check className="w-5 h-5" />
+                         </div>
                        )}
                     </div>
+
+                    {/* Show confirmed answer */}
                     {hasAnswerText && !isActive && (
-                      <div className="mt-2 flex items-start gap-2">
-                        <PenLine className="w-3 h-3 text-neutral-400 dark:text-neutral-500 mt-1" />
-                        <p className="text-sm text-neutral-500 dark:text-neutral-400 italic">
+                      <div className="mt-2 flex items-start gap-2 animate-in fade-in">
+                        <PenLine className="w-3 h-3 text-neutral-400 dark:text-neutral-500 mt-1 shrink-0" />
+                        <p className="text-sm text-neutral-500 dark:text-neutral-400 italic break-words">
                           "{answerObj.answer}"
+                        </p>
+                      </div>
+                    )}
+
+                    {/* Show imported suggestion inline if no answer yet */}
+                    {!hasAnswerText && hasImportedData && !isActive && (
+                      <div className="mt-2 flex items-start gap-2 animate-in fade-in">
+                        <Sparkles className="w-3 h-3 text-amber-500 mt-1 shrink-0" />
+                        <p className="text-sm text-amber-700 dark:text-amber-400 font-medium break-words">
+                          {importedText}
                         </p>
                       </div>
                     )}
@@ -262,8 +298,8 @@ const ScreeningSession: React.FC = () => {
               </button>
            </div>
            
-           {/* Insight Popup */}
-           {importedData && showInsight && (
+           {/* Insight Popup - Only show if current text is empty and there is data (edge case now) */}
+           {importedData && showInsight && tempAnswer === '' && (
              <div className="bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 rounded-xl p-3 animate-in fade-in slide-in-from-top-2 shadow-sm">
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex gap-3">

@@ -350,6 +350,18 @@ const LeadReview: React.FC = () => {
                 </div>
               )}
 
+              {/* General Session Notes - Moved to Top */}
+              <div className="bg-neutral-50 dark:bg-neutral-800/50 p-4 rounded-xl border border-neutral-200 dark:border-neutral-700 mb-8">
+                 <h3 className="text-lg font-bold text-neutral-900 dark:text-white mb-2">General Session Notes</h3>
+                 <textarea
+                   rows={4}
+                   value={generalNotes}
+                   onChange={(e) => setGeneralNotes(e.target.value)}
+                   className="w-full p-4 bg-white dark:bg-neutral-900 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 dark:focus:ring-indigo-400/20 focus:border-indigo-600 dark:focus:border-indigo-400 outline-none text-neutral-900 dark:text-white resize-none text-sm sm:text-base transition-all"
+                   placeholder="Add any free-form notes, impressions, or extra details about the candidate here..."
+                 />
+              </div>
+
               {SECTIONS.map((section) => {
                 const sectionQuestions = showSelectedOnly 
                    ? section.questions.filter(q => lead.answers[q.id]?.selected)
@@ -407,18 +419,6 @@ const LeadReview: React.FC = () => {
                       <button onClick={() => setShowSelectedOnly(false)} className="text-indigo-600 dark:text-indigo-400 hover:underline mt-2 text-sm font-medium">Show all questions</button>
                   </div>
               )}
-              
-              {/* General Session Notes */}
-              <div className="pt-6 border-t border-neutral-200 dark:border-neutral-800">
-                 <h3 className="text-lg sm:text-xl font-bold text-neutral-900 dark:text-white mb-4">General Session Notes</h3>
-                 <textarea
-                   rows={6}
-                   value={generalNotes}
-                   onChange={(e) => setGeneralNotes(e.target.value)}
-                   className="w-full p-4 bg-neutral-50 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 rounded-xl focus:ring-2 focus:ring-indigo-500/20 dark:focus:ring-indigo-400/20 focus:border-indigo-600 dark:focus:border-indigo-400 outline-none text-neutral-900 dark:text-white resize-none text-sm sm:text-base"
-                   placeholder="Add any free-form notes, impressions, or extra details about the candidate here..."
-                 />
-              </div>
             </div>
           ) : (
             <div className="max-w-3xl mx-auto space-y-8 sm:space-y-12">

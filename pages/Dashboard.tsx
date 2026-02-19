@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { getLeads, createLead, deleteLead, updateLead } from '../services/storage';
 import { Lead, SavedAnswer } from '../types';
-import { Plus, User, Clock, ChevronRight, Trash2, FileText, Upload, AlertCircle, CheckCircle, History, ListTodo, Calendar, Phone, MapPin, Briefcase, Download, X, CheckSquare, Square } from 'lucide-react';
+import { Plus, User, Clock, ChevronRight, Trash2, FileText, Upload, AlertCircle, CheckCircle, History, ListTodo, Calendar, Phone, MapPin, Briefcase, Download, X, CheckSquare, Square, StickyNote, MoreVertical } from 'lucide-react';
 import Papa from 'papaparse';
 
 const Dashboard: React.FC = () => {
@@ -12,18 +12,23 @@ const Dashboard: React.FC = () => {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<'queue' | 'history'>('queue');
   const [importStatus, setImportStatus] = useState<{ type: 'success' | 'error', message: string } | null>(null);
+  
+  // Selection Mode State
+  const [isSelectionMode, setIsSelectionMode] = useState(false);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // Fix: Use ReturnType<typeof setTimeout> instead of NodeJS.Timeout to support environments without Node types
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const navigate = useNavigate();
 
   useEffect(() => {
     setLeads(getLeads());
   }, []);
 
-  // Clear selection when tab changes to avoid confusion
+  // Exit selection mode when tab changes
   useEffect(() => {
-    setSelectedIds(new Set());
+    exitSelectionMode();
   }, [activeTab]);
 
   const handleCreate = (e: React.FormEvent) => {
@@ -37,36 +42,33 @@ const Dashboard: React.FC = () => {
     navigate(`/screen/${lead.id}`);
   };
 
-  const handleDelete = (e: React.MouseEvent, id: string) => {
+  const deleteItems = (ids: Set<string>) => {
+    ids.forEach(id => deleteLead(id));
+    setLeads(getLeads());
+    exitSelectionMode();
+  };
+
+  const handleDeleteOne = (e: React.MouseEvent, id: string) => {
     e.preventDefault();
     e.stopPropagation();
     if (confirm('Are you sure you want to delete this session?')) {
-      deleteLead(id);
-      setLeads(getLeads());
-      // Remove from selection if it was selected
-      if (selectedIds.has(id)) {
-        const newSet = new Set(selectedIds);
-        newSet.delete(id);
-        setSelectedIds(newSet);
-      }
+      deleteItems(new Set([id]));
     }
   };
 
   const handleBulkDelete = () => {
     if (selectedIds.size === 0) return;
-    if (confirm(`Are you sure you want to delete ${selectedIds.size} selected session(s)? This cannot be undone.`)) {
-      selectedIds.forEach(id => deleteLead(id));
-      setLeads(getLeads());
-      setSelectedIds(new Set());
+    if (confirm(`Delete ${selectedIds.size} selected session(s)?`)) {
+      deleteItems(selectedIds);
     }
   };
 
-  const toggleSelection = (e: React.MouseEvent, id: string) => {
-    e.preventDefault();
-    e.stopPropagation();
+  const toggleSelection = (id: string) => {
     const newSet = new Set(selectedIds);
     if (newSet.has(id)) {
       newSet.delete(id);
+      // If last item deselected, exit mode
+      if (newSet.size === 0) setIsSelectionMode(false);
     } else {
       newSet.add(id);
     }
@@ -79,6 +81,46 @@ const Dashboard: React.FC = () => {
     } else {
       const newSet = new Set(displayedLeads.map(l => l.id));
       setSelectedIds(newSet);
+    }
+  };
+
+  const exitSelectionMode = () => {
+    setIsSelectionMode(false);
+    setSelectedIds(new Set());
+  };
+
+  // --- Long Press Logic ---
+  const startLongPress = (id: string) => {
+    if (isSelectionMode) return;
+    longPressTimer.current = setTimeout(() => {
+      setIsSelectionMode(true);
+      const newSet = new Set<string>();
+      newSet.add(id);
+      setSelectedIds(newSet);
+      if (navigator.vibrate) navigator.vibrate(50);
+    }, 500); // 500ms for long press
+  };
+
+  const cancelLongPress = () => {
+    if (longPressTimer.current) {
+      clearTimeout(longPressTimer.current);
+      longPressTimer.current = null;
+    }
+  };
+
+  const handleTouchStart = (id: string) => startLongPress(id);
+  const handleTouchEnd = () => cancelLongPress();
+  const handleTouchMove = () => cancelLongPress(); // Cancel if scrolling
+  const handleMouseDown = (id: string) => startLongPress(id);
+  const handleMouseUp = () => cancelLongPress();
+  const handleMouseLeave = () => cancelLongPress();
+
+  // Handle Item Click (Navigation vs Selection)
+  const handleItemClick = (e: React.MouseEvent, id: string) => {
+    if (isSelectionMode) {
+      e.preventDefault();
+      e.stopPropagation();
+      toggleSelection(id);
     }
   };
 
@@ -244,57 +286,37 @@ const Dashboard: React.FC = () => {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+      {/* Top Header - Hidden in Selection Mode on Mobile/Small screens to mimic Android CAB behavior */}
+      <div className={`flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-all ${isSelectionMode ? 'opacity-20 pointer-events-none md:opacity-100 md:pointer-events-auto' : 'opacity-100'}`}>
         <div>
           <h1 className="text-2xl font-bold text-neutral-900 dark:text-white">Lead Dashboard</h1>
           <p className="text-neutral-500 dark:text-neutral-400">Manage your screening queue and history.</p>
         </div>
         
-        {selectedIds.size > 0 ? (
-           <div className="flex items-center gap-3 animate-in fade-in slide-in-from-right-4">
-              <span className="text-sm font-bold text-indigo-600 dark:text-indigo-400">{selectedIds.size} Selected</span>
-              <button 
-                onClick={handleBulkDelete}
-                className="bg-red-50 hover:bg-red-100 dark:bg-red-900/20 dark:hover:bg-red-900/30 text-red-600 dark:text-red-400 px-4 py-2.5 rounded-lg font-medium flex items-center gap-2 transition-colors border border-red-200 dark:border-red-900/50"
-              >
-                <Trash2 className="w-4 h-4" />
-                Delete Selected
-              </button>
-              {activeTab === 'history' && (
-                <button 
-                  onClick={handleBulkExport}
-                  className="bg-white hover:bg-neutral-50 dark:bg-neutral-900 dark:hover:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 px-4 py-2.5 rounded-lg shadow-sm font-medium flex items-center gap-2 transition-all"
-                >
-                  <Download className="w-4 h-4 text-indigo-600 dark:text-indigo-400" />
-                  Export Selected
-                </button>
-              )}
-           </div>
-        ) : (
-          <div className="flex flex-wrap gap-3">
-            <input 
-              type="file" 
-              ref={fileInputRef}
-              onChange={handleFileUpload}
-              accept=".csv"
-              className="hidden"
-            />
-            <button 
-              onClick={() => fileInputRef.current?.click()}
-              className="bg-white hover:bg-neutral-50 dark:bg-neutral-900 dark:hover:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 px-4 py-2.5 rounded-lg shadow-sm font-medium flex items-center gap-2 transition-all active:scale-95 group"
-            >
-              <Upload className="w-4 h-4 text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform" />
-              Import CSV
-            </button>
-            <button 
-              onClick={() => setIsModalOpen(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400 text-white px-4 py-2.5 rounded-lg shadow-md font-medium flex items-center gap-2 transition-all active:scale-95 group"
-            >
-              <Plus className="w-4 h-4 text-white/90 group-hover:rotate-90 transition-transform" />
-              New Session
-            </button>
-          </div>
-        )}
+        {/* Regular Action Buttons */}
+        <div className="flex flex-wrap gap-3">
+          <input 
+            type="file" 
+            ref={fileInputRef}
+            onChange={handleFileUpload}
+            accept=".csv"
+            className="hidden"
+          />
+          <button 
+            onClick={() => fileInputRef.current?.click()}
+            className="bg-white hover:bg-neutral-50 dark:bg-neutral-900 dark:hover:bg-neutral-800 border border-neutral-300 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 px-4 py-2.5 rounded-lg shadow-sm font-medium flex items-center gap-2 transition-all active:scale-95 group"
+          >
+            <Upload className="w-4 h-4 text-indigo-600 dark:text-indigo-400 group-hover:scale-110 transition-transform" />
+            Import CSV
+          </button>
+          <button 
+            onClick={() => setIsModalOpen(true)}
+            className="bg-indigo-600 hover:bg-indigo-700 dark:bg-indigo-500 dark:hover:bg-indigo-400 text-white px-4 py-2.5 rounded-lg shadow-md font-medium flex items-center gap-2 transition-all active:scale-95 group"
+          >
+            <Plus className="w-4 h-4 text-white/90 group-hover:rotate-90 transition-transform" />
+            New Session
+          </button>
+        </div>
       </div>
 
       {importStatus && (
@@ -304,8 +326,8 @@ const Dashboard: React.FC = () => {
         </div>
       )}
 
-      {/* Tabs & Filters */}
-      <div className="flex flex-wrap items-center justify-between gap-4">
+      {/* Tabs */}
+      <div className={`flex flex-wrap items-center justify-between gap-4 transition-all ${isSelectionMode ? 'opacity-20 pointer-events-none md:opacity-100 md:pointer-events-auto' : 'opacity-100'}`}>
         <div className="flex gap-1 bg-neutral-100 dark:bg-neutral-900 p-1.5 rounded-xl w-fit border border-neutral-200 dark:border-neutral-800">
           <button
             onClick={() => setActiveTab('queue')}
@@ -326,19 +348,50 @@ const Dashboard: React.FC = () => {
             History ({historyLeads.length})
           </button>
         </div>
-
-        {displayedLeads.length > 0 && (
-           <button 
-             onClick={toggleSelectAll}
-             className="text-sm font-medium text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 transition-colors flex items-center gap-1.5"
-           >
-             {selectedIds.size === displayedLeads.length ? <CheckSquare className="w-4 h-4" /> : <Square className="w-4 h-4" />}
-             {selectedIds.size === displayedLeads.length ? 'Deselect All' : 'Select All'}
-           </button>
-        )}
       </div>
 
-      <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-sm border border-neutral-200 dark:border-neutral-800 overflow-hidden min-h-[300px]">
+      <div className="bg-white dark:bg-neutral-900 rounded-xl shadow-sm border border-neutral-200 dark:border-neutral-800 overflow-hidden min-h-[300px] relative">
+        {/* Contextual Action Bar (Selection Mode Header) */}
+        {isSelectionMode && (
+          <div className="absolute top-0 left-0 right-0 z-20 bg-indigo-600 dark:bg-indigo-700 text-white p-3 md:px-6 flex items-center justify-between shadow-md animate-in slide-in-from-top-2">
+            <div className="flex items-center gap-4">
+              <button onClick={exitSelectionMode} className="p-1 hover:bg-white/20 rounded-full transition-colors">
+                <X className="w-5 h-5" />
+              </button>
+              <span className="font-bold text-lg">{selectedIds.size} Selected</span>
+            </div>
+            <div className="flex items-center gap-3">
+              <button 
+                onClick={toggleSelectAll}
+                className="flex items-center gap-2 px-3 py-1.5 hover:bg-white/20 rounded-lg transition-colors text-sm font-medium"
+              >
+                {selectedIds.size === displayedLeads.length ? <CheckSquare className="w-5 h-5" /> : <Square className="w-5 h-5" />}
+                <span className="hidden sm:inline">Select All</span>
+              </button>
+              
+              <div className="h-6 w-px bg-white/30 mx-1"></div>
+
+              {activeTab === 'history' && (
+                <button 
+                  onClick={handleBulkExport}
+                  className="p-2 hover:bg-white/20 rounded-full transition-colors"
+                  title="Export Selected"
+                >
+                  <Download className="w-5 h-5" />
+                </button>
+              )}
+              
+              <button 
+                onClick={handleBulkDelete}
+                className="p-2 hover:bg-red-500 rounded-full transition-colors"
+                title="Delete Selected"
+              >
+                <Trash2 className="w-5 h-5" />
+              </button>
+            </div>
+          </div>
+        )}
+
         {displayedLeads.length === 0 ? (
           <div className="p-12 text-center text-neutral-400 dark:text-neutral-600">
             <User className="w-12 h-12 mx-auto mb-4 opacity-20" />
@@ -346,117 +399,162 @@ const Dashboard: React.FC = () => {
             {activeTab === 'queue' && <p className="text-sm mt-1">Import a CSV or start a new session.</p>}
           </div>
         ) : (
-          <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
-            {displayedLeads.map((lead) => {
-               const isSelected = selectedIds.has(lead.id);
-               return (
-                <div 
-                  key={lead.id} 
-                  className={`group relative p-4 transition-all hover:bg-neutral-50 dark:hover:bg-neutral-800/50 
-                    ${isSelected ? 'bg-indigo-50/60 dark:bg-indigo-900/10' : ''}
-                  `}
-                >
-                  <div className="flex items-start gap-3 md:gap-4">
-                    {/* Checkbox - Aligned with Name visually */}
-                    <div className="pt-1">
-                        <button
-                            onClick={(e) => toggleSelection(e, lead.id)}
-                            className="text-neutral-400 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors"
-                        >
-                            {isSelected ? (
-                                <CheckSquare className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
-                            ) : (
-                                <Square className="w-5 h-5" />
-                            )}
-                        </button>
-                    </div>
+          <div className={`${isSelectionMode ? 'pt-14' : ''} transition-all`}>
+            {/* Header row (Only visible if NOT in selection mode, effectively serves as column headers if needed, but we wanted to hide select button) */}
+            {/* We removed the previous select all header to keep it clean as requested */}
 
-                    {/* Main Content */}
-                    <Link 
-                        to={activeTab === 'queue' ? `/screen/${lead.id}` : `/review/${lead.id}`} 
-                        className="flex-1 min-w-0 flex items-start gap-3 md:gap-4 group-hover:opacity-90 transition-opacity"
-                    >
-                        {/* Avatar */}
-                        <div className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center font-bold text-base md:text-lg shrink-0 border 
-                        ${activeTab === 'queue' ? 'bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-indigo-700 dark:text-white' : 'bg-neutral-100 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400'}`}>
-                        {lead.name.charAt(0).toUpperCase()}
+            <div className="divide-y divide-neutral-100 dark:divide-neutral-800">
+              {displayedLeads.map((lead) => {
+                 const isSelected = selectedIds.has(lead.id);
+                 const phone = lead.answers['q_contact']?.answer || lead.answers['q_contact']?.importedAnswer || '';
+
+                 return (
+                  <div 
+                    key={lead.id}
+                    // Long press handlers
+                    onTouchStart={() => handleTouchStart(lead.id)}
+                    onTouchEnd={handleTouchEnd}
+                    onTouchMove={handleTouchMove}
+                    onMouseDown={() => handleMouseDown(lead.id)}
+                    onMouseUp={handleMouseUp}
+                    onMouseLeave={handleMouseLeave}
+                    onContextMenu={(e) => {
+                      e.preventDefault(); // Always prevent native menu on items to act like an app
+                      if (!isSelectionMode) {
+                         setIsSelectionMode(true);
+                         const newSet = new Set<string>();
+                         newSet.add(lead.id);
+                         setSelectedIds(newSet);
+                      } else {
+                        // Toggle if already in selection mode
+                        toggleSelection(lead.id);
+                      }
+                    }}
+                    className={`group relative p-4 transition-all duration-200 select-none
+                      ${isSelected ? 'bg-indigo-50/80 dark:bg-indigo-900/20' : 'hover:bg-neutral-50 dark:hover:bg-neutral-800/50'}
+                      ${isSelectionMode ? 'cursor-pointer' : ''}
+                    `}
+                  >
+                    <div className="flex items-start gap-3 md:gap-4">
+                      
+                      {/* Checkbox - Only visible in Selection Mode */}
+                      {isSelectionMode && (
+                        <div className="pt-2 animate-in zoom-in duration-200">
+                            <button
+                                onClick={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  toggleSelection(lead.id);
+                                }}
+                                className="text-indigo-600 dark:text-indigo-400 transition-colors"
+                            >
+                                {isSelected ? (
+                                    <CheckSquare className="w-6 h-6" />
+                                ) : (
+                                    <Square className="w-6 h-6 text-neutral-400" />
+                                )}
+                            </button>
                         </div>
+                      )}
 
-                        {/* Text Details */}
-                        <div className="min-w-0 flex-1 pt-0.5">
-                            <h3 className="font-bold text-neutral-900 dark:text-white text-base md:text-lg truncate pr-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                                {lead.name}
-                            </h3>
-                            
-                            <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs md:text-sm text-neutral-500 dark:text-neutral-400 mt-1">
-                                <span className="flex items-center gap-1 shrink-0">
-                                    <Clock className="w-3.5 h-3.5" />
-                                    {new Date(lead.createdAt).toLocaleDateString()}
-                                </span>
+                      {/* Main Content - Navigation or Selection Toggle */}
+                      <Link 
+                          to={activeTab === 'queue' ? `/screen/${lead.id}` : `/review/${lead.id}`}
+                          onClick={(e) => handleItemClick(e, lead.id)}
+                          className={`flex-1 min-w-0 flex items-start gap-3 md:gap-4 transition-opacity ${isSelected ? '' : 'group-hover:opacity-90'}`}
+                      >
+                          {/* Avatar */}
+                          <div className={`w-10 h-10 md:w-12 md:h-12 rounded-full flex items-center justify-center font-bold text-base md:text-lg shrink-0 border transition-transform duration-200
+                             ${isSelectionMode && isSelected ? 'scale-90 opacity-80' : ''}
+                             ${activeTab === 'queue' ? 'bg-white dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-indigo-700 dark:text-white' : 'bg-neutral-100 dark:bg-neutral-800 border-neutral-200 dark:border-neutral-700 text-neutral-500 dark:text-neutral-400'}`}>
+                             {lead.name.charAt(0).toUpperCase()}
+                          </div>
 
-                                {lead.interviewer && (
-                                  <span className="flex items-center gap-1 shrink-0 text-neutral-400 dark:text-neutral-500">
-                                    <User className="w-3.5 h-3.5" />
-                                    By: {lead.interviewer}
+                          {/* Text Details */}
+                          <div className="min-w-0 flex-1 pt-0.5">
+                              <h3 className="font-bold text-neutral-900 dark:text-white text-base md:text-lg truncate pr-2 group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
+                                  {lead.name}
+                              </h3>
+                              
+                              <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 text-xs md:text-sm text-neutral-500 dark:text-neutral-400 mt-1">
+                                  <span className="flex items-center gap-1 shrink-0">
+                                      <Clock className="w-3.5 h-3.5" />
+                                      {new Date(lead.createdAt).toLocaleDateString()}
                                   </span>
-                                )}
-                                
-                                <span className={`px-2 py-0.5 rounded-full text-[10px] md:text-xs font-medium border shrink-0 ${getStatusColor(lead.status)}`}>
-                                    {lead.status}
-                                </span>
 
-                                {/* Grade Badge */}
-                                {lead.internalScore.overallRating && (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] md:text-xs font-bold bg-neutral-900 dark:bg-white text-white dark:text-black border border-black dark:border-white shrink-0">
-                                    Grade: {lead.internalScore.overallRating}
+                                  {activeTab === 'history' && phone && (
+                                    <span className="flex items-center gap-1 shrink-0 text-neutral-500 dark:text-neutral-400">
+                                      <Phone className="w-3.5 h-3.5" />
+                                      {phone}
                                     </span>
-                                )}
+                                  )}
 
-                                {/* Next Step Badge */}
-                                {lead.nextStep && activeTab === 'history' && (
-                                    <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] md:text-xs font-semibold bg-neutral-100 dark:bg-neutral-800 border border-neutral-200 dark:border-neutral-700 text-neutral-700 dark:text-neutral-300 shrink-0">
-                                    {getNextStepIcon(lead.nextStep.status)}
-                                    <span className="truncate max-w-[100px]">{lead.nextStep.status}</span>
+                                  {lead.interviewer && (
+                                    <span className="flex items-center gap-1 shrink-0 text-neutral-400 dark:text-neutral-500">
+                                      <User className="w-3.5 h-3.5" />
+                                      By: {lead.interviewer}
                                     </span>
-                                )}
+                                  )}
+                                  
+                                  <span className={`px-2 py-0.5 rounded-full text-[10px] md:text-xs font-medium border shrink-0 ${getStatusColor(lead.status)}`}>
+                                      {lead.status}
+                                  </span>
 
-                                {Object.values(lead.answers).some((a: SavedAnswer) => !!a.importedAnswer) && lead.status === 'New' && (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] md:text-xs font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 flex items-center gap-1 shrink-0">
-                                    <FileText className="w-3 h-3" /> Imported
-                                </span>
-                                )}
-                            </div>
+                                  {lead.internalScore.overallRating && (
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] md:text-xs font-bold bg-neutral-900 dark:bg-white text-white dark:text-black border border-black dark:border-white shrink-0">
+                                      Grade: {lead.internalScore.overallRating}
+                                      </span>
+                                  )}
+
+                                  {Object.values(lead.answers).some((a: SavedAnswer) => !!a.importedAnswer) && lead.status === 'New' && (
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] md:text-xs font-medium bg-amber-50 dark:bg-amber-900/20 text-amber-700 dark:text-amber-400 border border-amber-200 dark:border-amber-800 flex items-center gap-1 shrink-0">
+                                      <FileText className="w-3 h-3" /> Imported
+                                  </span>
+                                  )}
+                              </div>
+
+                              {activeTab === 'history' && lead.generalNotes && (
+                                <div className="mt-2.5 bg-neutral-50 dark:bg-neutral-800/50 p-2 rounded-lg border border-neutral-100 dark:border-neutral-800/50 flex gap-2 items-start max-w-xl">
+                                  <StickyNote className="w-3.5 h-3.5 text-neutral-400 mt-0.5 shrink-0" />
+                                  <p className="text-xs text-neutral-600 dark:text-neutral-300 line-clamp-2 italic">
+                                    {lead.generalNotes}
+                                  </p>
+                                </div>
+                              )}
+                          </div>
+                      </Link>
+
+                      {/* Regular Actions (Only when NOT in selection mode) */}
+                      {!isSelectionMode && (
+                        <div className="flex items-center gap-1 md:gap-2 shrink-0 self-center md:self-auto pt-1">
+                          {activeTab === 'queue' ? (
+                               <Link 
+                               to={`/screen/${lead.id}`}
+                               className="text-sm font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1 p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
+                             >
+                               <span className="hidden md:inline">Start</span> <ChevronRight className="w-5 h-5" />
+                             </Link>
+                          ) : (
+                              <>
+                                  <button 
+                                      onClick={(e) => handleDeleteOne(e, lead.id)}
+                                      className="p-2 text-neutral-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors"
+                                      title="Delete"
+                                  >
+                                      <Trash2 className="w-5 h-5" />
+                                  </button>
+                                  <Link to={`/review/${lead.id}`} className="p-2 text-neutral-300 dark:text-neutral-600 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
+                                      <ChevronRight className="w-5 h-5" />
+                                  </Link>
+                              </>
+                          )}
                         </div>
-                    </Link>
-
-                    {/* Actions */}
-                    <div className="flex items-center gap-1 md:gap-2 shrink-0 self-center md:self-auto pt-1">
-                        {activeTab === 'queue' ? (
-                             <Link 
-                             to={`/screen/${lead.id}`}
-                             className="text-sm font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1 p-2 hover:bg-indigo-50 dark:hover:bg-indigo-900/20 rounded-lg transition-colors"
-                           >
-                             <span className="hidden md:inline">Start</span> <ChevronRight className="w-5 h-5" />
-                           </Link>
-                        ) : (
-                            <>
-                                <button 
-                                    onClick={(e) => handleDelete(e, lead.id)}
-                                    className="p-2 text-neutral-400 hover:text-red-600 hover:bg-red-50 dark:hover:bg-red-900/20 rounded-full transition-colors"
-                                    title="Delete"
-                                >
-                                    <Trash2 className="w-5 h-5" />
-                                </button>
-                                <Link to={`/review/${lead.id}`} className="p-2 text-neutral-300 dark:text-neutral-600 hover:text-indigo-600 dark:hover:text-indigo-400 transition-colors">
-                                    <ChevronRight className="w-5 h-5" />
-                                </Link>
-                            </>
-                        )}
+                      )}
                     </div>
                   </div>
-                </div>
-               );
-            })}
+                 );
+              })}
+            </div>
           </div>
         )}
       </div>
